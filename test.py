@@ -66,6 +66,12 @@ class Actor(object):
             r_hat,_,_ = tf.py_func(r, [tf.reshape(reward, [-1]), tf.reshape(logp, [-1, self.config.action_size]), tf.reshape(action, [-1])], [tf.float32, tf.float32, tf.float32])
             gradients = self.__get_gradients(r_hat)
             # 计算梯度
+    def train(self):
+        """
+        训练，包含采集以及更新参数的过程
+        # TODO 合并多个游戏过程的梯度，更新参数
+        :return:
+        """
 
 
 
