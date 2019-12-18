@@ -33,27 +33,28 @@ class Actor(object):
 
         self.graph = tf.Graph()
         with self.graph.as_default():
-            self.observation = tf.placeholder(dtype=tf.float32, shape=[None, 210, 160, 3], name='observation')
+            self.observation = tf.placeholder(dtype=tf.float32, shape=[None, 210, 160, 1], name='observation')
             self.action = tf.placeholder(dtype=tf.int32, shape=[None, 1], name='action')
             self.reward = tf.placeholder(dtype=tf.int32, shape=[None, 1], name='reward')
             # 计算概率
-            ft = tf.layers.conv2d(self.observation, 16, [5, 5], padding='SAME', name='conv1')
+            ft = tf.layers.conv2d(self.observation, 4, [5, 5], activation=tf.nn.relu, padding='SAME', name='conv1')
             ft = tf.layers.max_pooling2d(ft, [2,2], 2, padding='SAME')
-            ft = tf.layers.conv2d(ft, 16, [5, 5], padding='SAME', name='conv2')
+            ft = tf.layers.conv2d(ft, 1, [5, 5], activation=tf.nn.relu, padding='SAME', name='conv2')
             ft = tf.layers.max_pooling2d(ft, [2, 2], 2, padding='SAME')
-            ft = tf.layers.conv2d(ft, 1, [5, 5], padding='SAME', name='conv3')
-            ft = tf.layers.max_pooling2d(ft, [2, 2], 2, padding='SAME')
-            ft = tf.reshape(ft, [-1, 27*20])
+            ft = tf.reshape(ft, [-1, 53*40])
+            ft = tf.layers.dense(ft, 300, activation=tf.tanh, name='dense')
 
-            p = tf.layers.dense(ft, self.config.action_size, name='dense')
+            p = tf.layers.dense(ft, self.config.action_size, name='dense1')
 
             # 计算logp
             p = tf.nn.softmax(p, axis=-1)
             logp = tf.math.log(p+1e-8)
+            #logp = p
             tag = tf.one_hot(tf.reshape(self.action, [-1]), depth=self.config.action_size, axis=-1)
+            self.logp = logp
             logp = tf.reduce_sum(logp*tag, axis=-1)
 
-            self.logp = logp
+            self.logp_1 = logp
             # 计算用于优化参数的reward
             def r(reward):
                 """
@@ -65,8 +66,9 @@ class Actor(object):
                 """
                 rt = []
                 rate = np.array([math.pow(0.9, x) for x in range(len(reward)+1)], dtype=np.float32)
+                length = len(reward)
                 for index, x in enumerate(reward):
-                    rt.append(np.sum(rate[:-(index+1)]*(reward[index:]-0.1)))
+                    rt.append(np.sum(rate[:length-index]*(reward[index:]-0.1)))
                 return np.array(rt, dtype=np.float32)
 
             r = tf.py_func(r, [tf.reshape(self.reward, [-1])], [tf.float32])
@@ -76,6 +78,7 @@ class Actor(object):
             # self.opt = self.__get_gradients(-r_hat)
             self.opt = tf.train.GradientDescentOptimizer(self.config.lr).minimize(-self.r_hat)
             self.p = p
+            self.r = r
             # 计算梯度
 
     def __get_tau(self, count, sess):
@@ -93,27 +96,27 @@ class Actor(object):
         for index in range(count):
             tau.append([])
             observation = env.reset()
+            next_observation = observation
             flag=True
             score = 0
             step=0
             while(flag):
                 # time.sleep(0.05)
-                if False:
-                    next_observation, reward, done, info = env.step(0)
-                    score+=reward
-                    observation = next_observation
-                    step+=1
-                    continue
-                else:
-                    next_action = sess.run(self.p, feed_dict = {self.observation:np.array([observation], dtype=np.float32)})
-                    # 并非选择概率最高的，按分布随机选择
-                    next_action = np.random.choice([0,1,2,3,4,5], 1, replace=True, p = next_action[0])[0]
-                    next_observation, reward, done, info = env.step(next_action)
-                    score+=reward
-                    tau[-1].append([observation, next_action, reward])
-                    observation = next_observation
-                    step+=1
-                if done or score==21 or score==-21:
+                rate = np.reshape(np.array([0.2126,0.7152,0.0722], dtype=np.float32),[1,1,3])
+                rate.sum()
+                cache = [(rate*next_observation).sum(axis=-1,keepdims=True)-(rate*observation).sum(axis=-1,keepdims=True)]
+                env.render()
+                next_action = sess.run(self.p, feed_dict={self.observation: np.array([cache[0]], dtype=np.float32)})
+                # print(next_action)
+                # 并非选择概率最高的，按分布随机选择
+                next_action = np.random.choice([0, 1, 2, 3, 4, 5], 1, replace=True, p=next_action[0])[0]
+                observation = next_observation
+                next_observation, reward, done, info = env.step(next_action)
+                score += reward
+                cache = cache+[next_action, reward]
+                tau[-1].append(cache)
+                step += 1
+                if done or score==2 or score==-2:
                     flag=False
         env.close()
         return tau
@@ -132,7 +135,7 @@ class Actor(object):
                 logging.info("episode:%d"%(step))
                 # 采集游戏过程
                 tau = self.__get_tau(1, sess)[0]
-                logging.info("采集结果,游戏时长：%d， 总得分:%d" % (len(tau), sum([x[2] for x in tau])))
+                logging.info("采集结果，时长：%d，总得分:%d" % (len(tau), sum([x[2] for x in tau])))
                 # 选择若干步进行更新参数
                 for n in range(len(tau)//self.config.batch_size+1):
                     cache = tau[n*self.config.batch_size:(n+1)*self.config.batch_size]
@@ -141,14 +144,15 @@ class Actor(object):
                     obervation = np.concatenate([np.expand_dims(x[0], axis=0) for x in cache], axis=0)
                     action = np.concatenate([np.expand_dims([x[1]], axis=0) for x in cache], axis=0)
                     reward = np.concatenate([np.expand_dims([x[2]], axis=0) for x in cache], axis=0)
-                    sess.run(self.opt, feed_dict={self.observation:obervation, self.action:action, self.reward:reward})
+                    r_hat, _, r, logp = sess.run([self.r_hat, self.opt, self.p, self.logp], feed_dict={self.observation:obervation, self.action:action, self.reward:reward})
+                    #print(r)
 
 class Config(object):
     def __init__(self):
         self.action_size = 6
         self.lr = 1e-3
         self.episode = 10000
-        self.batch_size = 128
+        self.batch_size = 150
 
 
 if __name__=="__main__":
