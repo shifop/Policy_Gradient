@@ -5,8 +5,8 @@ from agent import Agent
 
 def parse():
     parser = argparse.ArgumentParser(description="Policy gradient for pong-v0")
-    parser.add_argument('--train', action="store_true", help='train mode', default=True)
-    parser.add_argument('--test', action="store_true", help='test mode')
+    parser.add_argument('--train', action="store_true", help='train mode')
+    parser.add_argument('--test', action="store_true", help='test mode', default=True)
     parser.add_argument('-e', '--epochs', default=10000, help='training epochs')
     parser.add_argument('-b', '--batch_size', default=10, help='update model every batch_size of game')
     parser.add_argument('-l', '--lr', default=1e-4, help='learning rate')

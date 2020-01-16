@@ -109,17 +109,14 @@ class Agent():
             for index, x in enumerate(tf.trainable_variables()):
                 logger.info('%d:%s' % (index, x))
 
-    def get_action(self, sess, state, is_training=True):
+    def get_action(self, sess, state):
         action_p = sess.run(self.p_st, feed_dict={self.observation: state})
 
-        if is_training:
-            if action_p[0][0]>np.random.uniform():
-                action_int = 0
-            else:
-                action_int = 1
-            return action_int, action_p[0]
+        if action_p[0][0]>np.random.uniform():
+            action_int = 0
         else:
-            return action_p[0].argmax(), action_p[0]
+            action_int = 1
+        return action_int, action_p[0]
 
     def __update(self, sess, diff_states_dic, act_dic, r_dic):
         loss, log_scores, _ = sess.run([self.loss, self.log_scores, self.train_op], feed_dict={
@@ -215,34 +212,7 @@ class Agent():
         pass
 
     def test(self):
-        env = gym.make('Pong-v0')
-        env.seed(11037)
-        with tf.Session(graph=self.graph, config=tf.ConfigProto(allow_soft_placement=True,
-                                                                gpu_options=tf.GPUOptions(allow_growth=True))) as sess:
-            sess.run(tf.global_variables_initializer())
-            self.saver.restore(sess, './model/model.ckpt')
-            # start train
-            num_game = 0
-            done, pre_state, diff_state = self._set_env(env)
-            step
-            while True:
-                if done:
-                    num_game = num_game + 1
-                    step = step + 1
-                    reward_per_game = 0
-                    # end of the epoch
-                    if num_game == args.batch_size:
-                        break
-                    done, pre_state, diff_state = self._set_env(env)
-                else:
-                    # play the game
-                    act, act_p = self.get_action(sess, diff_state[0])  # 第一个是选择的操作，第二个是预测出的分布概率
-                    state, reward, done, _ = env.step(act+2)
-                    env.render()
-
-                    state = prepro(state)
-                    diff_state = state - pre_state
-                    pre_state = state
+        pass
 
 
 def save_img(path, img):
